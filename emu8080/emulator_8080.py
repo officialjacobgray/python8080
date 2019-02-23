@@ -34,36 +34,27 @@ def emulate_operation():
     '''Parse current instruction and call the relevant code, 
         increasing the PC as appropriate for that instruction'''
     opcode = state.get_current_opcode()
-    # The lamdba here sets operation to None if opcode not in dict
-    operation = instruction_dict_8080.get(opcode)
-    # opcodes in dict that are yet to be defined exist as strings
-    if operation is None or type(operation) is str:
-        unimplemented_instruction(opcode)
-    else:
-        #call the function or partial from the instruction dictionary
-        #print("{:04x}\t".format(state.get_register_value('pc')) \
-        #    + "{:02x}\t".format(opcode), end=' ')
-        override_instruction_length = operation()
-        '''The return value for some functions defines whether to
-            increment the PC at this point, because e.g. a True JMP_IF
-            shouldn't increase it (it affects the downstream value 
-            incorrectly) but a false JMP_IF should change. Otherwise,
-            check if an instruction length is specified in the special
-            length dict, using that if present. Fall back on a single
-            byte increase if no greater information is present.'''
-        if override_instruction_length is not None:
-            state.increase_pc(override_instruction_length)
-        elif opcode in instruction_special_sizes:
-            state.increase_pc(instruction_special_sizes[opcode])
-        else:
-            state.increase_pc(1)
+    # opcodes in dict that are yet to be defined exist as strings,
+    # which will crash the program (string cannot be executed error)
+    '''Pulling the instruction from dict as an index rather than
+        with dict.get() will crash if an invalid value is submitted
+        but benchmarking suggests performance increases up to 40%'''
+    operation = instruction_dict_8080[opcode]
+    #print("{:04x}\t".format(state.get_register_value('pc')) \
+    #    + "{:02x}\t".format(opcode), end=' ')
+    # call the function or partial from the instruction dictionary
+    instruction_length = operation()
+    '''The return value for some functions defines whether to
+        increment the PC at this point, because e.g. a True JMP_IF
+        shouldn't increase it (it affects the downstream value 
+        incorrectly) but a false JMP_IF should change. The correct
+        increase is returned by each operation to be used here'''
+    state.increase_pc(instruction_length)
     return opcode
 
 def hexform(value):
-    '''Return numbers as 8-bit hex strings, or return string back if
-        string is provided'''
-    '''TODO: replace using this with Python's formatting tools,
-        using this for now so I can focus on functionality'''
+    '''Return numbers as hex strings, or return string back if
+        a different type is provided'''
     if type(value) is int:
         if value < 0xff:
             return ".{:02x}".format(value)
@@ -90,6 +81,8 @@ def load_program(binary_data, start_address = 0):
     state.load_program(binary_data, start_address)
 
 def impl_count():
+    '''Provides a count of implemented and unimplemented instructions
+        in the instruction dict'''
     done = 0
     notdone = 0
     for element in instruction_dict_8080.values():
@@ -119,25 +112,33 @@ def get_16_bit_from_byte_pair(high_byte, low_byte):
 ***********************************************************************
 '''
 
+''' Each instruction returns the amount to increase the PC following
+    that operation'''
 
 def nop():
     '''No operation'''
     dlog("NOP\t")
+    return 1
 
 def mov(register_to, register_from):
     '''Move stored value from register2 to register1'''
     dlog("MOV\t\t", register_to, "<-", register_from)
-    if register_from == 'm':
-        value = state.get_memory_by_registers('h', 'l')
-        state.set_register_value(register_to, value)
-    else:
-        state.set_register_copy(register_to, register_from)
+    state.set_register_copy(register_to, register_from)
+    return 1
 
-def mov_m(target_register):
+def mov_m(register_to):
+    '''Move stored value from register2 to register1'''
+    value = state.get_memory_by_registers('h', 'l')
+    dlog("MOV M\t\t", register_to, "<-", value)
+    state.set_register_value(register_to, value)
+    return 1
+
+def mov_to_m(target_register):
     '''Move target register into memory address specified by HL'''
-    dlog("MOV M\t\t", target_register)
+    dlog("MOV TO M\t", target_register)
     value = state.get_register_value(target_register)
     state.set_memory_by_registers(value, 'h', 'l')
+    return 1
 
 def lxi(high_target, low_target):
     '''Load Pair Immediate into specified register pair'''
@@ -146,6 +147,7 @@ def lxi(high_target, low_target):
     dlog("LXI\t\t", high_target, low_target, high_data, low_data)
     state.set_register_value(high_target, high_data)
     state.set_register_value(low_target, low_data)
+    return 3
 
 def lxi_sp():
     '''Load Pair Immediate into Stack Pointer'''
@@ -154,42 +156,76 @@ def lxi_sp():
     dlog("LXI SP\t\t", high_data, low_data)
     state.set_register_value('sp', \
         get_16_bit_from_byte_pair(high_data, low_data))
+    return 3
 
-def add(register_to, register_from, read_carry = False):
+def add(register_to, register_from):
     '''Add a register value to defined register, updating flags.
         If read_carry is passed as True, the carry bit will be added
         in the operation.'''
-    dlog("ADD\t\t", register_to, register_from, "cy", read_carry)
-    if register_from == 'm':
-        result = state.get_register_value(register_to) \
-                + state.get_memory_by_registers('h', 'l')
-    else:
-        result = state.get_register_value(register_to) \
-                + state.get_register_value(register_from)
-    if read_carry:
-        result += state.get_flag('cy')
+    dlog("ADD\t\t", register_to, register_from)
+    result = state.get_register_value(register_to) \
+            + state.get_register_value(register_from)
     state.set_register_value(register_to, result)
     state.set_flags(result, ['z','s','p','cy','ac'])
+    return 1
 
-def adi(register_to, read_carry = False):
-    '''Add immediate byte to the specified register, updating flags.
-        If read_carry is passed as True, the carry bit will be added
-        in the operation.'''
+def add_m(register_to):
+    '''Add memory byte stored at HL to the provided register,
+        updating flags'''
+    dlog("ADD M\t\t", register_to)
+    result = state.get_register_value(register_to) \
+            + state.get_memory_by_registers('h', 'l')
+    state.set_register_value(register_to, result)
+    state.set_flags(result, ['z','s','p','cy','ac'])
+    return 1
+
+def adc(register_to, register_from):
+    '''Add from register value to register_to, including the value
+        of the carry bit, and updates flags based on the result'''
+    dlog("ADC\t\t", register_to, register_from)
+    result = state.get_register_value(register_to)    \
+            + state.get_register_value(register_from) \
+            + state.get_flag('cy')
+    state.set_register_value(register_to, result)
+    state.set_flags(result, ['z','s','p','cy','ac'])
+    return 1
+
+def adc_m(register_to):
+    '''Add memory byte stored at HL to the provided register,
+        updating flags'''
+    dlog("ADC M\t\t", register_to)
+    result = state.get_register_value(register_to)    \
+            + state.get_memory_by_registers('h', 'l') \
+            + state.get_flag('cy')
+    state.set_register_value(register_to, result)
+    state.set_flags(result, ['z','s','p','cy','ac'])
+    return 1
+
+def adi(register_to):
+    '''Add immediate byte to the specified register, 
+        updating flags.'''
     byte = state.get_memory_by_offset(1)
-    dlog("ADI\t\t", "cy", read_carry, byte)
+    dlog("ADI\t\t", byte)
     result = state.get_register_value(register_to) + byte
-    if read_carry:
-        result += state.get_flag('cy')
     state.set_register_value(register_to, result)
     state.set_flags(result, ['z','s','p','cy','ac'])
+    return 2
 
-def sub(register_to, register_from, read_carry = False):
-    '''Store difference of to and from into register_to. If
-        read_carry is passed as True, the carry bit will also be
-        subtracted.'''
-    '''We might merge this into add() but keeping it 
-        separate right now simplifies the instruction dict calls'''
-    dlog("SUB\t\t", register_to, register_from, "cy", read_carry)
+def aci(register_to):
+    '''Add immediate byte to the specified register, as well as the
+        value of the carry bit, and update flags.'''
+    byte = state.get_memory_by_offset(1)
+    dlog("ADI\t\t", byte)
+    result = state.get_register_value(register_to) \
+                + byte                             \
+                + state.get_flag('cy')
+    state.set_register_value(register_to, result)
+    state.set_flags(result, ['z','s','p','cy','ac'])
+    return 2
+
+def sub(register_to, register_from):
+    '''Subtract - Store difference of to and from into register_to'''
+    dlog("SUB\t\t", register_to, register_from)
     if register_from == 'm':
         subtrahend = state.get_memory_by_registers('h', 'l')
     else:
@@ -197,42 +233,122 @@ def sub(register_to, register_from, read_carry = False):
     carry = subtrahend > state.get_register_value(register_to)
     subtrahend = -subtrahend & 0xff
     result = state.get_register_value(register_to) + subtrahend
-    if read_carry:
-        result -= state.get_flag('cy')
     state.set_register_value(register_to, result)
     state.set_flags(result, ['z','s','p','ac'])
     state.set_single_flag('cy', carry)
+    return 1
 
-def sui(register_to, read_carry = False):
-    '''Store difference of register_to and immediate byte in 
-        register_to, updating flags. If read_carry is passed as True,
-        the carry bit will also be subtracted.'''
-    subtrahend = state.get_memory_by_offset(1)
-    dlog("SUI\t\t", register_to, "cy", read_carry, subtrahend)
+def sub_m(register_to):
+    '''Subtract from memory - Store difference of to and memory byte
+        at HL into regsiter_to'''
+    subtrahend = state.get_memory_by_registers('h', 'l')
+    dlog("SUB M\t\t", register_to, subtrahend)
     carry = subtrahend > state.get_register_value(register_to)
     subtrahend = -subtrahend & 0xff
     result = state.get_register_value(register_to) + subtrahend
-    if read_carry:
-        result -= state.get_flag('cy')
     state.set_register_value(register_to, result)
     state.set_flags(result, ['z','s','p','ac'])
     state.set_single_flag('cy', carry)
+    return 1
 
-def cmp(register_to, register_from = None):
+def sbb(register_to, register_from):
+    '''Subtract with borrow - Store difference of to and from into
+        register_to, including the carry bit as a borrow'''
+    #TODO I don't think this is correct for new carry when borrowing
+    dlog("SBB\t\t", register_to, register_from)
+    subtrahend = state.get_register_value(register_from)
+    carry = subtrahend > state.get_register_value(register_to)
+    subtrahend = -subtrahend & 0xff
+    result = state.get_register_value(register_to) \
+                + subtrahend                       \
+                - state.get_flag('cy')
+    state.set_register_value(register_to, result)
+    state.set_flags(result, ['z','s','p','ac'])
+    state.set_single_flag('cy', carry)
+    return 1
+
+def sbb_m(register_to):
+    '''Subtractfrom memory with borrow - Store difference of to and
+        memory byte at HL into regsiter_to, including the carry bit
+        as a borrow''' 
+    #TODO I don't think this is correct for new carry when borrowing
+    subtrahend = state.get_memory_by_registers('h', 'l')
+    dlog("SBB M\t\t", register_to, subtrahend)
+    carry = subtrahend > state.get_register_value(register_to)
+    subtrahend = -subtrahend & 0xff
+    result = state.get_register_value(register_to) \
+                + subtrahend                       \
+                - state.get_flag('cy')
+    state.set_register_value(register_to, result)
+    state.set_flags(result, ['z','s','p','ac'])
+    state.set_single_flag('cy', carry)
+    return 1
+
+def sui(register_to):
+    '''Subtract Immedate - Stores difference of register_to and
+        immediate byte in register_to, updating flags'''
+    subtrahend = state.get_memory_by_offset(1)
+    dlog("SUI\t\t", register_to, subtrahend)
+    carry = subtrahend > state.get_register_value(register_to)
+    subtrahend = -subtrahend & 0xff
+    result = state.get_register_value(register_to) + subtrahend
+    state.set_register_value(register_to, result)
+    state.set_flags(result, ['z','s','p','ac'])
+    state.set_single_flag('cy', carry)
+    return 2
+
+def sbi(register_to):
+    '''Subtract Immediate with Borrow - Stores difference of 
+        register_to and immediate byte in register_to, including
+        the value of the carry bit as a borrow and updating flags'''
+    subtrahend = state.get_memory_by_offset(1)
+    dlog("SBI\t\t", register_to, subtrahend)
+    carry = subtrahend > state.get_register_value(register_to)
+    subtrahend = -subtrahend & 0xff
+    result = state.get_register_value(register_to) \
+                + subtrahend                       \
+                - state.get_flag('cy')
+    state.set_register_value(register_to, result)
+    state.set_flags(result, ['z','s','p','ac'])
+    state.set_single_flag('cy', carry)
+    return 2
+
+def cmp(register_to, register_from):
     '''Compare, sets flags based on (to - from). If from is not
         set, use immediate byte instead'''
-    if register_from == 'm':
-        subtrahend = state.get_memory_by_registers('h', 'l')
-    elif register_from != None:
-        subtrahend = state.get_register_value(register_from)
-    else:
-        subtrahend = state.get_memory_by_offset(1)
+    subtrahend = state.get_register_value(register_from)
     dlog("CMP\t\t", register_to, register_from, subtrahend)
     carry = subtrahend > state.get_register_value(register_to)
     subtrahend = -subtrahend & 0xff
     result = state.get_register_value(register_to) + subtrahend
     state.set_flags(result, ['z','s','p','ac'])
     state.set_single_flag('cy', carry)
+    return 1
+
+def cmp_m(register):
+    '''Compare to memory, sets flags based on 
+        (register - memory at HL)'''
+    subtrahend = state.get_memory_by_registers('h', 'l')
+    dlog("CMP M\t\t", register, subtrahend)
+    carry = subtrahend > state.get_register_value(register)
+    subtrahend = -subtrahend & 0xff
+    result = state.get_register_value(register) + subtrahend
+    state.set_flags(result, ['z','s','p','ac'])
+    state.set_single_flag('cy', carry)
+    return 1
+        
+
+def cmi(register):
+    '''Compare to immediate - sets flags based on 
+        (register - immediate byte)'''
+    subtrahend = state.get_memory_by_offset(1)
+    dlog("CMI\t\t", register, subtrahend)
+    carry = subtrahend > state.get_register_value(register)
+    subtrahend = -subtrahend & 0xff
+    result = state.get_register_value(register) + subtrahend
+    state.set_flags(result, ['z','s','p','ac'])
+    state.set_single_flag('cy', carry)
+    return 2
 
 def save(register_from, register_high, register_low):
     '''Saves data value to the address specified by the 
@@ -240,6 +356,7 @@ def save(register_from, register_high, register_low):
     dlog("SAVE\t\t", register_from, register_high, register_low)
     value = state.get_register_value(register_from)
     state.set_memory_by_registers(value, register_high, register_low)
+    return 1
 
 def load_r(target_register, high_byte, low_byte):
     '''Loads 16-bit data into target register from register pair'''
@@ -249,6 +366,8 @@ def load_r(target_register, high_byte, low_byte):
     state.set_register_value(target_register, value)
     if target_register == 'pc':
         return 0
+    else:
+        return 1
 
 def load_m(target_register, high_byte, low_byte):
     '''Loads data into the target register from a memory address, 
@@ -258,16 +377,19 @@ def load_m(target_register, high_byte, low_byte):
                 state.get_memory_by_registers(high_byte, low_byte))
     if target_register == 'pc':
         return 0
+    else:
+        return 1
 
 def inr(target_register):
     '''Increment Register or Memory'''
     if target_register == 'm':
         inr_m()
-        return
+        return 1
     dlog("INR\t\t", target_register)
     result = state.get_register_value(target_register) + 1
     state.set_register_value(target_register, result)
     state.set_flags(result, ['z','s','p','ac'])
+    return 1
 
 def inr_m():
     '''Increment Memory stored at address described by HL. Not
@@ -277,6 +399,7 @@ def inr_m():
     result += 1
     state.set_memory_by_registers(result, 'h', 'l')
     state.set_flags(result, ['z','s','p','ac'])
+    return 1
 
 def dcr(target_register):
     '''Decrement Register'''
@@ -285,6 +408,7 @@ def dcr(target_register):
     # NOTE: inaccurate, does not handle 0-- correctly for flags
     state.set_flags(state.get_register_value(target_register), \
                                              ['z','s','p','ac'])
+    return 1
 
 def dcr_m():
     '''Decrement Memory stored at address described by HL'''
@@ -293,18 +417,21 @@ def dcr_m():
     result -= 1
     state.set_memory_by_registers(result, 'h', 'l')
     state.set_flags(result, ['z', 's', 'p', 'ac'])
+    return 1
 
 def mvi(target_register):
     '''Loads immediate byte into the target register'''
     byte = state.get_memory_by_offset(1)
     dlog("MVI\t\t", target_register, byte)
     state.set_register_value(target_register, byte)
+    return 2
 
 def mvi_m():
     '''Loads immediate byte to the memory address indicated by HL'''
     byte = state.get_memory_by_offset(1)
     dlog("MVI_M\t\t", byte)
     state.set_memory_by_registers(byte, 'h', 'l')
+    return 2
 
 def jmp(address = None):
     '''Jump to immediate address, or arg address if provided'''
@@ -320,6 +447,8 @@ def jmp_flag(condition):
         address = state.get_memory_word_immediate()
         state.set_register_value('pc', address)
         return 0
+    else:
+        return 3
 
 def jmp_not_flag(condition):
     '''Jump to immediate address if flag is False'''
@@ -328,6 +457,8 @@ def jmp_not_flag(condition):
         address = state.get_memory_word_immediate()
         state.set_register_value('pc', address)
         return 0
+    else:
+        return 3
 
 def push(high_byte, low_byte):
     '''Push register values onto the stack'''
@@ -339,6 +470,7 @@ def push(high_byte, low_byte):
     state.set_stack_top(high_byte)
     state.decrement_register('sp')
     state.set_stack_top(low_byte)
+    return 1
 
 def push_psw():
     '''Push ACC and flags onto the stack'''
@@ -351,6 +483,7 @@ def push_psw():
     low_byte ^= state.get_flag('z')  << 6
     low_byte ^= state.get_flag('s')  << 7
     push(high_byte, low_byte)
+    return 1
 
 def pop(high_target, low_target):
     '''Pop values from the stack to the given target registers'''
@@ -359,6 +492,7 @@ def pop(high_target, low_target):
     state.increment_register('sp')
     state.set_register_value(high_target, state.get_stack_top())
     state.increment_register('sp')
+    return 1
 
 def pop_psw():
     '''Pop values from the stack into ACC and state flags'''
@@ -372,6 +506,7 @@ def pop_psw():
     state.set_single_flag('ac', flags_byte & (1<<4))
     state.set_single_flag('z',  flags_byte & (1<<6))
     state.set_single_flag('s',  flags_byte & (1<<7))
+    return 1
 
 def call():
     '''Push pc+3 onto stack, jump to immediate address'''
@@ -401,6 +536,8 @@ def call_flag(condition):
     if state.get_flag(condition):
         call()
         return 0
+    else:
+        return 3
 
 def call_not_flag(condition):
     '''Call if condition is False'''
@@ -408,6 +545,8 @@ def call_not_flag(condition):
     if not state.get_flag(condition):
         call()
         return 0
+    else:
+        return 3
 
 def ret_flag(condition):
     '''Return if condition is True'''
@@ -415,6 +554,8 @@ def ret_flag(condition):
     if state.get_flag(condition):
         ret()
         return 0
+    else:
+        return 1
 
 def ret_not_flag(condition):
     '''Return if condition is False'''
@@ -422,6 +563,8 @@ def ret_not_flag(condition):
     if not state.get_flag(condition):
         ret()
         return 0
+    else:
+        return 1
 
 def rst(target):
     '''Reset (interrupt) - stores the current PC on the stack and
@@ -447,6 +590,7 @@ def ana(register_from):
         result &= state.get_register_value(register_from)
     state.set_register_value('a', result)
     state.set_flags(result, ['z', 's', 'p', 'cy', 'ac'])
+    return 1
 
 def ani():
     '''Logical AND Immediate, stores A & immediate byte ->A'''
@@ -457,6 +601,7 @@ def ani():
     state.set_register_value('a', result)
     state.set_flags(result, ['z', 's', 'p'])
     state.set_single_flag('cy', False) # According to the spec
+    return 2
 
 def xra(register_from):
     '''Logical XOR, stores A ^ register_from -> A'''
@@ -468,6 +613,7 @@ def xra(register_from):
         result ^= state.get_register_value(register_from)
     state.set_register_value('a', result)
     state.set_flags(result, ['z', 's', 'p', 'cy', 'ac'])
+    return 1
 
 def xri():
     '''Logical XOR, stores A ^ immediate byte -> A'''
@@ -477,6 +623,7 @@ def xri():
     result ^= byte
     state.set_register_value('a', result)
     state.set_flags(result, ['z', 's', 'p', 'cy', 'ac'])
+    return 2
 
 def ora(register_from):
     '''Logical OR, stores A | register_from -> A'''
@@ -488,6 +635,7 @@ def ora(register_from):
         result |= state.get_register_value(register_from)
     state.set_register_value('a', result)
     state.set_flags(result, ['z', 's', 'p', 'cy', 'ac'])
+    return 1
 
 def ori():
     '''Logical OR, stores A | immediate byte -> A'''
@@ -497,11 +645,13 @@ def ori():
     result |= byte
     state.set_register_value('a', result)
     state.set_flags(result, ['z', 's', 'p', 'cy', 'ac'])
+    return 2
 
 def cma():
     '''Complement Accumulator, inverts the value stored in acc'''
     dlog("CMA\t")
     state.set_register_value('a', ~state.get_register_value('a'))
+    return 1
 
 def addx(high_byte, low_byte, mod_value):
     '''Add mod_value to register pair, treating it as a 16-bit value
@@ -511,12 +661,14 @@ def addx(high_byte, low_byte, mod_value):
     bigval = state.get_register_pair_value(high_byte, low_byte)
     bigval += mod_value
     state.set_register_pair_value(bigval, high_byte, low_byte)
+    return 1
 
 def addx_sp(mod_value):
     '''Add mod_value to stack pointer. For use in INXSP/DCXSP'''
     dlog("ADDX_SP\t\t", mod_value)
     result = state.get_register_value('sp') + mod_value
     state.set_register_value('sp', result)
+    return 1
 
 def rlc():
     '''Rotate Accumulator Left - the mnemonic seems backwards for
@@ -528,6 +680,7 @@ def rlc():
     result += bit7 # places bit 7 at new bit 0
     state.set_single_flag('cy', bit7)
     state.set_register_value('a', result)
+    return 1
 
 def ral():
     '''Rotate Accumulator Left through Carry'''
@@ -538,6 +691,7 @@ def ral():
     result += state.get_flag('cy') # places carry bit at new bit 0
     state.set_single_flag('cy', bit7)
     state.set_register_value('a', result)
+    return 1
 
 def rrc():
     '''Rotate Accumulator Right'''
@@ -548,6 +702,7 @@ def rrc():
     result += bit0 * 128 # places bit 0 at new bit 7
     state.set_single_flag('cy', bit0)
     state.set_register_value('a', result)
+    return 1
 
 def rar():
     '''Rotate Accumulator Right through Carry'''
@@ -558,21 +713,25 @@ def rar():
     result += state.get_flag('cy') * 128 # places cy bit at new bit 7
     state.set_single_flag('cy', bit0)
     state.set_register_value('a', result)
+    return 1
 
 def stc():
     '''Set Carry'''
     dlog("STC\t")
     state.set_single_flag('cy', True)
+    return 1
 
 def cmc():
     '''Complement Carry'''
     dlog("CMC\t")
     state.set_single_flag('cy', not state.get_flag('cy'))
+    return 1
 
 def set_interrupt_enabled(new_bool):
     '''Sets interrupt_enabled to the given bool'''
     dlog("SetInter\t", new_bool)
     state.set_single_flag('interrupt_enabled', new_bool)
+    return 1
 
 def dad(high_byte, low_byte):
     ''' Double Add - provided register pair is added to HL pair 
@@ -582,6 +741,7 @@ def dad(high_byte, low_byte):
     result += state.get_register_pair_value(high_byte, low_byte)
     state.set_single_flag('cy', result > 0xffff)
     state.set_register_pair_value(result, 'h', 'l')
+    return 1
 
 def dad_sp():
     '''Double Add - the current stack pointer is added to HL as 
@@ -593,6 +753,7 @@ def dad_sp():
     result += state.get_register_value('sp')
     state.set_single_flag('cy', result > 0xffff)
     state.set_register_pair_value(result, 'h', 'l')
+    return 1
 
 def xchg():
     '''Exchange Registers DE and HL'''
@@ -603,6 +764,7 @@ def xchg():
     tmp = state.get_register_value('l')
     state.set_register_copy('l', 'e')
     state.set_register_value('e', tmp)
+    return 1
 
 def xthl():
     '''Exchange stack values with HL'''
@@ -611,6 +773,7 @@ def xthl():
     tmp_low = state.get_register_value('l')
     pop('h', 'l')
     push(tmp_high, tmp_low)
+    return 1
 
 def lda():
     '''Load A with data from the memory address specified by the
@@ -619,6 +782,7 @@ def lda():
     data = state.get_memory_by_address(address)
     dlog("LDA\t\t", address, ":", data)
     state.set_register_value('a', data)
+    return 3
 
 def sta():
     '''Store A at the memory address specified by the next two
@@ -626,6 +790,7 @@ def sta():
     address = state.get_memory_word_immediate()
     dlog("STA\t\t", address)
     state.store_register_at_address('a', address)
+    return 3
 
 def lhld():
     '''Load HL Direct - loads byte from memory address specified by
@@ -638,6 +803,7 @@ def lhld():
     address += 1
     state.set_register_value('h', \
                     state.get_memory_by_address(address))
+    return 3
 
 def shld():
     '''Store HL Direct - stores L at memory address specified by two
@@ -647,6 +813,7 @@ def shld():
     state.store_register_at_address('l', address)
     address += 1
     state.store_register_at_address('h', address)
+    return 3
 
 def _pretend_read():
     '''IN placeholder for internal use - just writes a log saying
@@ -655,6 +822,7 @@ def _pretend_read():
         apply_read_data function'''
     device_id = state.get_memory_by_offset(1)
     dlog("IN\t\t", device_id)
+    return 2
 
 def apply_read_data(data):
     '''For use in IN operations, called externally to pass read data 
@@ -663,11 +831,12 @@ def apply_read_data(data):
 
 def _pretend_write():
     '''OUT placeholder for internal use - just writes a log saying
-        an OUT opcode was reached. actual device write should be caught
-        and handled through machine-specific code externally, using the
-        get_write_data function'''
+        an OUT opcode was reached. actual device write should be
+        caught and handled through machine-specific code externally,
+        using the get_write_data function'''
     device_id = state.get_memory_by_offset(1)
     dlog("OUT\t\t", device_id)
+    return 2
 
 def get_write_data():
     '''For use in OUT operations, returns data to be written out to
@@ -702,10 +871,11 @@ def daa(): # TODO add AC flag to relevant other ops
         top_bits += 0x60
         result   += 0x60
     state.set_register_value('a', result)
-    # If top_bits carries out, set CY flag, else ignore
+    # If top_bits carries out, set CY flag, else ignore (not reset)
     if top_bits & 0x100:
         state.set_single_flag('cy', True)
     state.set_flags(result, ['z','s','p'])
+    return 1
 
 '''Map byte instructions to functions'''
 instruction_dict_8080 = { # size    flags
@@ -780,7 +950,7 @@ instruction_dict_8080 = { # size    flags
     0x43 : partial(mov, 'b', 'e'),          #"MOV B,E",
     0x44 : partial(mov, 'b', 'h'),          #"MOV B,H",
     0x45 : partial(mov, 'b', 'l'),          #"MOV B,L",
-    0x46 : partial(mov, 'b', 'm'),          #"MOV B,M",
+    0x46 : partial(mov_m, 'b'),             #"MOV B,M",
     0x47 : partial(mov, 'b', 'a'),          #"MOV B,A",
     
     0x48 : partial(mov, 'c', 'b'),          #"MOV C,B",
@@ -789,7 +959,7 @@ instruction_dict_8080 = { # size    flags
     0x4b : partial(mov, 'c', 'e'),          #"MOV C,E",
     0x4c : partial(mov, 'c', 'h'),          #"MOV C,H",
     0x4d : partial(mov, 'c', 'l'),          #"MOV C,L",
-    0x4e : partial(mov, 'c', 'm'),          #"MOV C,M",
+    0x4e : partial(mov_m, 'c'),             #"MOV C,M",
     0x4f : partial(mov, 'c', 'a'),          #"MOV C,A",
     
     0x50 : partial(mov, 'd', 'b'),          #"MOV D,B",
@@ -798,7 +968,7 @@ instruction_dict_8080 = { # size    flags
     0x53 : partial(mov, 'd', 'e'),          #"MOV D,E",
     0x54 : partial(mov, 'd', 'h'),          #"MOV D,H",
     0x55 : partial(mov, 'd', 'l'),          #"MOV D,L",
-    0x56 : partial(mov, 'd', 'm'),          #"MOV D,M",
+    0x56 : partial(mov_m, 'd'),             #"MOV D,M",
     0x57 : partial(mov, 'd', 'a'),          #"MOV D,A",
     
     0x58 : partial(mov, 'e', 'b'),          #"MOV E,B",
@@ -807,7 +977,7 @@ instruction_dict_8080 = { # size    flags
     0x5b : partial(mov, 'e', 'e'),          #"MOV E,E",
     0x5c : partial(mov, 'e', 'h'),          #"MOV E,H",
     0x5d : partial(mov, 'e', 'l'),          #"MOV E,L",
-    0x5e : partial(mov, 'e', 'm'),          #"MOV E,M",
+    0x5e : partial(mov_m, 'e'),             #"MOV E,M",
     0x5f : partial(mov, 'e', 'a'),          #"MOV E,A",
     
     0x60 : partial(mov, 'h', 'b'),          #"MOV H,B",
@@ -816,7 +986,7 @@ instruction_dict_8080 = { # size    flags
     0x63 : partial(mov, 'h', 'e'),          #"MOV H,E",
     0x64 : partial(mov, 'h', 'h'),          #"MOV H,H",
     0x65 : partial(mov, 'h', 'l'),          #"MOV H,L",
-    0x66 : partial(mov, 'h', 'm'),          #"MOV H,M",
+    0x66 : partial(mov_m, 'h'),             #"MOV H,M",
     0x67 : partial(mov, 'h', 'a'),          #"MOV H,A",
     
     0x68 : partial(mov, 'l', 'b'),          #"MOV L,B",
@@ -825,17 +995,17 @@ instruction_dict_8080 = { # size    flags
     0x6b : partial(mov, 'l', 'e'),          #"MOV L,E",
     0x6c : partial(mov, 'l', 'h'),          #"MOV L,H",
     0x6d : partial(mov, 'l', 'l'),          #"MOV L,L",
-    0x6e : partial(mov, 'l', 'm'),          #"MOV L,M",
+    0x6e : partial(mov_m, 'l'),             #"MOV L,M",
     0x6f : partial(mov, 'l', 'a'),          #"MOV L,A",
     
-    0x70 : partial(mov_m, 'b'),             #"MOV M,B",
-    0x71 : partial(mov_m, 'c'),             #"MOV M,C",
-    0x72 : partial(mov_m, 'd'),             #"MOV M,D",
-    0x73 : partial(mov_m, 'e'),             #"MOV M,E",
-    0x74 : partial(mov_m, 'h'),             #"MOV M,H",
-    0x75 : partial(mov_m, 'l'),             #"MOV M,L",
-    0x76 : "HLT", #incr pc to next seq instr, CPU STOPs until interrupt
-    0x77 : partial(mov_m, 'a'),             #"MOV M,A",
+    0x70 : partial(mov_to_m, 'b'),          #"MOV M,B",
+    0x71 : partial(mov_to_m, 'c'),          #"MOV M,C",
+    0x72 : partial(mov_to_m, 'd'),          #"MOV M,D",
+    0x73 : partial(mov_to_m, 'e'),          #"MOV M,E",
+    0x74 : partial(mov_to_m, 'h'),          #"MOV M,H",
+    0x75 : partial(mov_to_m, 'l'),          #"MOV M,L",
+    0x76 : "HLT", #incr pc to next instr, CPU STOPs until interrupt
+    0x77 : partial(mov_to_m, 'a'),          #"MOV M,A",
     
     0x78 : partial(mov, 'a', 'b'),          #"MOV A,B",
     0x79 : partial(mov, 'a', 'c'),          #"MOV A,C",
@@ -843,26 +1013,26 @@ instruction_dict_8080 = { # size    flags
     0x7b : partial(mov, 'a', 'e'),          #"MOV A,E",
     0x7c : partial(mov, 'a', 'h'),          #"MOV A,H",
     0x7d : partial(mov, 'a', 'l'),          #"MOV A,L",
-    0x7e : partial(mov, 'a', 'm'),          #"MOV A,M",
+    0x7e : partial(mov_m, 'a'),             #"MOV A,M",
     0x7f : partial(mov, 'a', 'a'),          #"MOV A,A",
     
-    0x80 : partial(add, 'a', 'b'),          #"ADD B",    #Z, S, P, CY, AC
+    0x80 : partial(add, 'a', 'b'),          #"ADD B",    #Z,S,P,CY,AC
     0x81 : partial(add, 'a', 'c'),          #"ADD C",
     0x82 : partial(add, 'a', 'd'),          #"ADD D",
     0x83 : partial(add, 'a', 'e'),          #"ADD E",
     0x84 : partial(add, 'a', 'h'),          #"ADD H",
     0x85 : partial(add, 'a', 'l'),          #"ADD L",
-    0x86 : partial(add, 'a', 'm'),          #"ADD M",
+    0x86 : partial(add_m, 'a'),             #"ADD M",
     0x87 : partial(add, 'a', 'a'),          #"ADD A",
     
-    0x88 : partial(add, 'a', 'b', True),    #"ADC B",
-    0x89 : partial(add, 'a', 'c', True),    #"ADC C",
-    0x8a : partial(add, 'a', 'd', True),    #"ADC D",
-    0x8b : partial(add, 'a', 'e', True),    #"ADC E",
-    0x8c : partial(add, 'a', 'h', True),    #"ADC H",
-    0x8d : partial(add, 'a', 'l', True),    #"ADC L",
-    0x8e : partial(add, 'a', 'm', True),    #"ADC M",
-    0x8f : partial(add, 'a', 'a', True),    #"ADC A",
+    0x88 : partial(adc, 'a', 'b'),          #"ADC B",
+    0x89 : partial(adc, 'a', 'c'),          #"ADC C",
+    0x8a : partial(adc, 'a', 'd'),          #"ADC D",
+    0x8b : partial(adc, 'a', 'e'),          #"ADC E",
+    0x8c : partial(adc, 'a', 'h'),          #"ADC H",
+    0x8d : partial(adc, 'a', 'l'),          #"ADC L",
+    0x8e : partial(adc_m, 'a'),             #"ADC M",
+    0x8f : partial(adc, 'a', 'a'),          #"ADC A",
     
     0x90 : partial(sub, 'a', 'b'),          #"SUB B",
     0x91 : partial(sub, 'a', 'c'),          #"SUB C",
@@ -870,17 +1040,17 @@ instruction_dict_8080 = { # size    flags
     0x93 : partial(sub, 'a', 'e'),          #"SUB E",
     0x94 : partial(sub, 'a', 'h'),          #"SUB H",
     0x95 : partial(sub, 'a', 'l'),          #"SUB L",
-    0x96 : partial(sub, 'a', 'm'),          #"SUB M",
+    0x96 : partial(sub_m, 'a'),             #"SUB M",
     0x97 : partial(sub, 'a', 'a'),          #"SUB A",
     
-    0x98 : partial(sub, 'a', 'b', True),    #"SBB B",
-    0x99 : partial(sub, 'a', 'c', True),    #"SBB C",
-    0x9a : partial(sub, 'a', 'd', True),    #"SBB D",
-    0x9b : partial(sub, 'a', 'e', True),    #"SBB E",
-    0x9c : partial(sub, 'a', 'h', True),    #"SBB H",
-    0x9d : partial(sub, 'a', 'l', True),    #"SBB L",
-    0x9e : partial(sub, 'a', 'm', True),    #"SBB M",
-    0x9f : partial(sub, 'a', 'a', True),    #"SBB A",
+    0x98 : partial(sbb, 'a', 'b'),          #"SBB B",
+    0x99 : partial(sbb, 'a', 'c'),          #"SBB C",
+    0x9a : partial(sbb, 'a', 'd'),          #"SBB D",
+    0x9b : partial(sbb, 'a', 'e'),          #"SBB E",
+    0x9c : partial(sbb, 'a', 'h'),          #"SBB H",
+    0x9d : partial(sbb, 'a', 'l'),          #"SBB L",
+    0x9e : partial(sbb_m, 'a'),             #"SBB M",
+    0x9f : partial(sbb, 'a', 'a'),          #"SBB A",
     
     0xa0 : partial(ana, 'b'),               #"ANA B",
     0xa1 : partial(ana, 'c'),               #"ANA C",
@@ -915,8 +1085,8 @@ instruction_dict_8080 = { # size    flags
     0xbb : partial(cmp, 'a', 'e'),          #"CMP E",
     0xbc : partial(cmp, 'a', 'h'),          #"CMP H",
     0xbd : partial(cmp, 'a', 'l'),          #"CMP L",
-    0xbe : partial(cmp, 'a', 'm'),          #"CMP M",
-    0xbf : partial(cmp, 'a', 'a'),          #"CMP A",#  Z, S, P, CY, AC
+    0xbe : partial(cmp_m, 'a'),             #"CMP M",
+    0xbf : partial(cmp, 'a', 'a'),          #"CMP A",     #Z,S,P,CY,AC
     
     0xc0 : partial(ret_not_flag, 'z'),      #"RNZ",
     0xc1 : partial(pop, 'b', 'c'),          #"POP B",
@@ -924,7 +1094,7 @@ instruction_dict_8080 = { # size    flags
     0xc3 : jmp,                             #"JMP adr",   #   3
     0xc4 : partial(call_not_flag, 'z'),     #"CNZ adr",   #   3
     0xc5 : partial(push, 'b', 'c'),         #"PUSH B",
-    0xc6 : partial(adi, 'a'),               #"ADI D8",    #   2       Z, S, P, CY, AC
+    0xc6 : partial(adi, 'a'),               #"ADI D8",    #Z,S,P,CY,AC
     0xc7 : partial(rst, 0x0),               #"RST 0",
     0xc8 : partial(ret_flag, 'z'),          #"RZ",
     0xc9 : ret,                             #"RET",
@@ -932,23 +1102,23 @@ instruction_dict_8080 = { # size    flags
     0xcb : nop,                             #"---",
     0xcc : partial(call_flag, 'z'),         #"CZ adr",    #   3
     0xcd : call,                            #"CALL adr",  #   3
-    0xce : partial(adi, 'a', True),         #"ACI D8",    #Z, S, P, CY, AC
+    0xce : partial(aci, 'a'),               #"ACI D8",    #Z,S,P,CY,AC
     0xcf : partial(rst, 0x8),               #"RST 1",
     0xd0 : partial(ret_not_flag, 'cy'),     #"RNC",
     0xd1 : partial(pop, 'd', 'e'),          #"POP D",
     0xd2 : partial(jmp_not_flag, 'cy'),     #"JNC adr",   #   3
-    0xd3 : _pretend_write,#"OUT D8",    #   2
+    0xd3 : _pretend_write,                  #"OUT D8",    #   2
     0xd4 : partial(call_not_flag, 'cy'),    #"CNC adr",   #   3
     0xd5 : partial(push, 'd', 'e'),         #"PUSH D",
-    0xd6 : partial(sui, 'a'),               #"SUI D8",    #Z, S, P, CY, AC
+    0xd6 : partial(sui, 'a'),               #"SUI D8",    #Z,S,P,CY,AC
     0xd7 : partial(rst, 0x10),              #"RST 2",
     0xd8 : partial(ret_flag, 'cy'),         #"RC",
     0xd9 : nop,                             #"---",
     0xda : partial(jmp_flag, 'cy'),         #"JC adr",    #   3
-    0xdb : _pretend_read,#"IN D8",     #   2
+    0xdb : _pretend_read,                   #"IN D8",     #   2
     0xdc : partial(call_flag, 'cy'),        #"CC adr",    #   3
     0xdd : nop,                             #"---",
-    0xde : partial(sui, 'a', True),         #"SBI D8",    #Z, S, P, CY, AC
+    0xde : partial(sbi, 'a'),               #"SBI D8",    #Z,S,P,CY,AC
     0xdf : partial(rst, 0x18),              #"RST 3",
     0xe0 : partial(ret_not_flag, 'p'),      #"RPO",
     0xe1 : partial(pop, 'h', 'l'),          #"POP H",
@@ -956,7 +1126,7 @@ instruction_dict_8080 = { # size    flags
     0xe3 : xthl,                            #"XTHL",
     0xe4 : partial(call_not_flag, 'p'),     #"CPO adr",   #   3
     0xe5 : partial(push, 'h', 'l'),         #"PUSH H",
-    0xe6 : ani,                             #"ANI D8",    #Z, S, P, CY, AC
+    0xe6 : ani,                             #"ANI D8",    #Z,S,P,CY,AC
     0xe7 : partial(rst, 0x20),              #"RST 4",
     0xe8 : partial(ret_flag, 'p'),          #"RPE",
     0xe9 : partial(load_r, 'pc', 'h', 'l'), #"PCHL",
@@ -964,7 +1134,7 @@ instruction_dict_8080 = { # size    flags
     0xeb : xchg,                            #"XCHG",
     0xec : partial(call_flag, 'p'),         #"CPE adr",   #   3
     0xed : nop,                             #"---",
-    0xee : xri,                             #"XRI D8",    #Z, S< P, CY, AC
+    0xee : xri,                             #"XRI D8",    #Z,S,P,CY,AC
     0xef : partial(rst, 0x28),              #"RST 5:",
     0xf0 : partial(ret_not_flag, 's'),      #"RP",
     0xf1 : pop_psw,                         #"POP PSW",   
@@ -972,7 +1142,7 @@ instruction_dict_8080 = { # size    flags
     0xf3 : partial(set_interrupt_enabled, False),#"DI",
     0xf4 : partial(call_not_flag, 's'),     #"CP adr",    #   3
     0xf5 : push_psw,                        #"PUSH PSW",
-    0xf6 : ori,                             #"ORI D8",    #Z, S, P, CY, AC
+    0xf6 : ori,                             #"ORI D8",    #Z,S,P,CY,AC
     0xf7 : partial(rst, 0x30),              #"RST 6",
     0xf8 : partial(ret_flag, 's'),          #"RM",
     0xf9 : partial(load_r, 'sp', 'h', 'l'), #"SPHL",
@@ -980,57 +1150,7 @@ instruction_dict_8080 = { # size    flags
     0xfb : partial(set_interrupt_enabled, True),#"EI",
     0xfc : partial(call_flag, 's'),         #"CM adr",    #   3
     0xfd : nop,                             #"---",
-    0xfe : partial(cmp, 'a'),               #"CPI D8",    #   2
+    0xfe : partial(cmi, 'a'),               #"CPI D8",    #   2
     0xff : partial(rst, 0x38),              #"RST 7"
 }
-
-'''most instructions are 1 byte, exceptions (instructions with
-    immediate arguments) are in this dict'''
-instruction_special_sizes = {
-    0x01 : 3,
-    0x06 : 2,
-    0x0e : 2,
-    0x11 : 3,
-    0x16 : 2,
-    0x1e : 2,
-    0x21 : 3,
-    0x22 : 3,
-    0x26 : 2,
-    0x2a : 3,
-    0x2e : 2,
-    0x31 : 3,
-    0x32 : 3,
-    0x36 : 2,
-    0x3a : 3,
-    0x3e : 2,
-    0xc2 : 3,
-    0xc3 : 3,
-    0xc4 : 3,
-    0xc6 : 2,
-    0xca : 3,
-    0xcc : 3,
-    0xcd : 3,
-    0xce : 2,
-    0xd2 : 3,
-    0xd3 : 2,
-    0xd4 : 3,
-    0xd6 : 2,
-    0xda : 3,
-    0xdb : 2,
-    0xdc : 3,
-    0xde : 2,
-    0xe2 : 3,
-    0xe4 : 3,
-    0xe6 : 2,
-    0xea : 3,
-    0xec : 3,
-    0xee : 2,
-    0xf2 : 3,
-    0xf4 : 3,
-    0xf6 : 2,
-    0xfa : 3,
-    0xfc : 3,
-    0xfe : 2
-}
-
 
