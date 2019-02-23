@@ -1,14 +1,24 @@
 # python8080
 An 8080 emulator written in Python 3.7.2, currently only supports the Space Invaders binary code. Graphics handled by [PyGame](https://www.pygame.org/).
 
-### To run (Linux):
-1. Install python 3.7
-2. Install pygame. On Debian systems I used `pip3 install pygame`, this may differ for you so make sure you're installing it using the correct version.
-3. Run the desired machine code. The current code only includes a Space Invaders machine:
-    `python3 io_invaders.py`
+### Running the emulator
+These instructions are for Debian-based Linux systems, but the code should run anywhere you can install Python and PyGame.
+
+1. Install python 3.7 and pip3.
+    ```
+    sudo apt install python3 python3-pip
+    ```
+2. Install pygame.
+    ```
+    pip3 install pygame
+    ```
+3. Run the desired machine code. The current code only includes a Space Invaders machine.
+    ```
+    python3 io_invaders.py
+    ```
 A graphical window should open and emulation will begin.
 
-##### Space Invaders controls:
+##### Space Invaders controls
     c           : Insert coin
     a           : Player 1 left
     d           : Player 1 right
@@ -50,4 +60,4 @@ Getting the game screen from memory and passing it through Python is currently t
 - Load configuration from file at runtime for input and dipswitches. The structure should make this pretty easy since most data we might want to change is already stored in a global dict.
 
 ### Conclusion
-As it stands, this was a really good learning experience with both Python and emulation in general but I don't really plan to return to this due to the significant performance issues I've encountered from using Python. It's possible I just don't know how to optimize Python properly, if you look at this and have some advice on how to improve this, please send me a message!
+As it stands, this was a really good learning experience with both Python and emulation in general but I don't really plan to continue this to this due to the significant performance issues I've encountered from using Python. It's possible I just don't know how to optimize Python properly, so if you look at this and have some advice on how to improve this, please let me know!
