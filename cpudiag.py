@@ -15,15 +15,14 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 '''
 
-import emulator_8080
-import sys
-import os
+import emu8080.emulator_8080 as emulator_8080
+from sys import exit
 
 '''Verifies the correctness of emulator_8080 via the cpudiag.bin
     test program'''
 
 # Diagnostic should be loaded at 0x0100 but file starts at 0x00
-with open("cpudiag.bin", 'rb') as input_file:
+with open("bin/cpudiag/cpudiag.bin", 'rb') as input_file:
     emulator_8080.load_program(input_file.read(), 0x0100)
 # Insert first instruction to jump to beginning of diagnostic code
 emulator_8080.state.set_memory_byte(0xc3, 0, 0) # JMP to:
@@ -64,7 +63,7 @@ while instruction_count < 620:
         elif (0 == emulator_8080.state.get_register_value('pc')):
             # If we jump to address 0, the test has ended
             print("> Exit called")
-            sys.exit()
+            exit()
     instruction_count += 1
     if instruction_count % 10 == 0:# or instruction_count >= 600:
         print(emulator_8080.state.summarize())
