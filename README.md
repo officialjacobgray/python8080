@@ -25,7 +25,6 @@ These instructions are for Debian-based Linux systems, but the code should run a
 A graphical window should open and emulation will begin.
 
 ##### Space Invaders controls
-    ```
     c           : Insert coin
     a           : Player 1 left
     d           : Player 1 right
@@ -35,7 +34,6 @@ A graphical window should open and emulation will begin.
     Up          : Player 2 Up
     1           : 1 Player start
     2           : 2 Player start
-    ```
 
 ### Adding a new machine
 
