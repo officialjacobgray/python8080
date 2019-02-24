@@ -4,7 +4,6 @@ An 8080 emulator written in Python 3.7.2, currently only supports the Space Inva
 ### Running the emulator
 These instructions are for Debian-based Linux systems, but the code should run anywhere you can install Python and PyGame.
 
-1. Download and extract the emulator. You can do this with git, or through the "Clone or download > Download ZIP" option at the top of this page.
 1. Install python 3.7 and pip3.
     ```
     sudo apt install python3 python3-pip
@@ -13,8 +12,14 @@ These instructions are for Debian-based Linux systems, but the code should run a
     ```
     pip3 install pygame
     ```
-3. Run the desired machine code. The current code only includes a Space Invaders machine.
+3. Download the emulator. You can do this with git:
     ```
+    git clone https://github.com/officialjacobgray/python8080.git
+    ```
+    Alternatively you can click "Clone or download > Download ZIP" at the top of this page and extract it.
+3. Open the emulator directory and run the desired machine code. The current code only includes a Space Invaders machine.
+    ```
+    cd python8080
     python3 invaders.py
     ```
 A graphical window should open and emulation will begin.
