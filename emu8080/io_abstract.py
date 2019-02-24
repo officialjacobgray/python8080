@@ -87,7 +87,7 @@ class IOAbstract():
         #pygame.K_w      : (1, 0x10), # p1 shoot
         #pygame.K_LEFT   : (2, 0x20), # p2 left
         #pygame.K_RIGHT  : (2, 0x40), # p2 right
-        #pygame.K_SPACE  : (2, 0x10), # p2 shoot
+        #pygame.K_UP     : (2, 0x10), # p2 shoot
         #pygame.K_c      : (1, 0x01), # coin
         #pygame.K_1      : (1, 0x04), # 1P start
         #pygame.K_2      : (1, 0x02)  # 2P start
