@@ -18,11 +18,12 @@
 '''
 
 from functools import partial
-import emu8080.system_state_8080 as state
+from emu8080.system_state_8080 import SystemState
 from sys import exit
 
 _debug_mode = 'none' # options are 'print' or 'write'
 _debug_file = "./debug_file"
+state = SystemState()
 
 def unimplemented_instruction(opcode):
     '''Prints failed instruction info'''
@@ -228,10 +229,7 @@ def aci(register_to):
 def sub(register_to, register_from):
     '''Subtract - Store difference of to and from into register_to'''
     dlog("SUB\t\t", register_to, register_from)
-    if register_from == 'm':
-        subtrahend = state.get_memory_by_registers('h', 'l')
-    else:
-        subtrahend = state.get_register_value(register_from)
+    subtrahend = state.get_register_value(register_from)
     carry = subtrahend > state.get_register_value(register_to)
     subtrahend = -subtrahend & 0xff
     result = state.get_register_value(register_to) + subtrahend
