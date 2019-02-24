@@ -17,7 +17,7 @@
     If not, see <https://www.gnu.org/licenses/>.
 '''
 
-'''Holds the IO code and specific hardware operations for 
+'''Holds the I/O code and specific hardware operations for 
     Space Invaders on the 8080, connects to emulator_8080 to operate,
     and uses PyGame for graphics and user input'''
 from sys import exit
@@ -28,12 +28,15 @@ from functools import partial
 from multiprocessing import Process
 from data.precalculated import packed_monochrome_to_palette
 
-class ShiftRegister(): # 16 bit
+class ShiftRegister():
+    '''16-bit shift register from the Space Invaders spec'''
     def __init__(self):
+        '''Stored values intialize to 0'''
         self._stored_value = 0
         self._offset = 0
     
     def __str__(self):
+        '''Returns stored values as a string'''
         return "value: " + str(self._stored_value) + ", offset: " \
                                                  + str(self._offset)
 
@@ -71,10 +74,42 @@ system_info = {
     'palette'       : [(0,0,0), (255,255,255)]
 }
 
+''' Read ports:
+    Port 0
+        bit 0 DIP4 (Seems to be self-test-request read at power up)
+        bit 1 Always 1
+        bit 2 Always 1
+        bit 3 Always 1
+        bit 4 Fire
+        bit 5 Left
+        bit 6 Right
+        bit 7 ? tied to demux port 7 ?
+    Port 1
+        bit 0 = CREDIT (1 if deposit)
+        bit 1 = 2P start (1 if pressed)
+        bit 2 = 1P start (1 if pressed)
+        bit 3 = Always 1
+        bit 4 = 1P shot (1 if pressed)
+        bit 5 = 1P left (1 if pressed)
+        bit 6 = 1P right (1 if pressed)
+        bit 7 = Not connected
+    Port 2
+        bit 0 = DIP3 00 = 3 ships  10 = 5 ships
+        bit 1 = DIP5 01 = 4 ships  11 = 6 ships
+        bit 2 = Tilt
+        bit 3 = DIP6 0 = extra ship at 1500, 1 = extra ship at 1000
+        bit 4 = P2 shot (1 if pressed)
+        bit 5 = P2 left (1 if pressed)
+        bit 6 = P2 right (1 if pressed)
+        bit 7 = DIP7 Coin info displayed in demo screen 0=ON
+    Port 3
+        bit 0-7 Shift register data
+'''
 read_ports = {
-    0 : 0xe, # mapped but unused, bits 1, 2, 3 are always 1
-    1 : 0x8, # bit 3 is always 1
-    2 : 0
+    0 : 0xe, # mapped but never read, bits 1,2,3 are always 1
+    1 : 0x8, # bit 3 is always 1.
+    2 : 0,
+    #3 : mapped to shift register's get function upstream
 }
 
 def set_port_bit(port, mask, new_state):
@@ -84,27 +119,6 @@ def set_port_bit(port, mask, new_state):
         read_ports[port] = read_ports[port] | mask
     else:
         read_ports[port] = read_ports[port] & ~mask
-
-sound_ports = {
-    3 : 0,
-    5 : 0
-}
-'''
-    port 3:
-        bit 0=UFO (repeats)        SX0 0.raw
-        bit 1=Shot                 SX1 1.raw
-        bit 2=Flash (player die)   SX2 2.raw
-        bit 3=Invader die          SX3 3.raw
-        bit 4=Extended play        SX4
-        bit 5= AMP enable          SX5
-    port 5: 
-        bit 0=Fleet movement 1     SX6 4.raw
-        bit 1=Fleet movement 2     SX7 5.raw
-        bit 2=Fleet movement 3     SX8 6.raw
-        bit 3=Fleet movement 4     SX9 7.raw
-        bit 4=UFO Hit              SX10 8.raw
-        bit 5= NC (Cocktail mode control ... to flip screen)
-'''
 
 keymap = {
     pygame.K_a      : partial(set_port_bit, 1, 0x20), # p1 left
@@ -118,6 +132,29 @@ keymap = {
     pygame.K_2      : partial(set_port_bit, 1, 0x02)  # 2P start
 }
 
+''' Sound triggers:
+    port 3:
+        bit 0 = UFO (repeats)        SX0
+        bit 1 = Shot                 SX1
+        bit 2 = Flash (player die)   SX2
+        bit 3 = Invader die          SX3
+        bit 4 = Extended play        SX4
+        bit 5 = AMP enable           SX5
+    port 5: 
+        bit 0 = Fleet movement 1     SX6
+        bit 1 = Fleet movement 2     SX7
+        bit 2 = Fleet movement 3     SX8
+        bit 3 = Fleet movement 4     SX9
+        bit 4 = UFO Hit              SX10
+        bit 5 = NC (Cocktail mode control ... to flip screen) TODO?
+'''
+sound_ports = {
+    3 : 0,
+    5 : 0
+}
+
+'''Filenames specified here are loaded into this dict as pygame Sound
+    objects at runtime'''
 sound_dict = {
     'playerdie'     : 'sounds/invaders/explosion.wav',
     'invaderdie'    : 'sounds/invaders/invaderkilled.wav',
@@ -131,12 +168,17 @@ sound_dict = {
 }
 
 def set_sounds(port, new_data):
+    '''Plays sound files according to output bit signals'''
     old_data = sound_ports[port]
     if old_data != new_data:
+        '''All sound files start only when their relevant bit changes
+            from 0 to 1'''
         if port == 3:
             if (new_data & 0x01) and not (old_data & 0x01):
+                # UFO sound is continuous, starting when 0 changes to 1
                 sound_dict['ufo'].play(-1)
             elif (not new_data & 0x01) and (old_data & 0x01):
+                # UFO sound stops when 1 changes to 0
                 sound_dict['ufo'].stop() # .fadeout()
             if (new_data & 0x02) and not (old_data & 0x02):
                 sound_dict['shot'].play()
@@ -174,30 +216,30 @@ def handle_events():
             return True
     return False
     
-def write_device(device_id):
+def write_device(port_num):
     '''Takes output from the program and simulates the 
         appropriate hardware interaction'''
     data = emulator_8080.get_write_data()
-    if device_id == 2:
+    if port_num == 2:
         shift.set_offset(data)
-    elif device_id == 3:
+    elif port_num == 3:
         set_sounds(3, data)
-    elif device_id == 4:
+    elif port_num == 4:
         shift.set_and_swap_bytes(data)
-    elif device_id == 5:
+    elif port_num == 5:
         set_sounds(5, data)
-    #elif device_id == 6:
-        '''strange 'debug' port? eg. it writes to this port when    
-            it writes text to the screen (0=a,1=b,2=c, etc)'''
-    #else:
-        # invalid device
-
-'''read port 1=$01 and 2=$00 will make the game run in attract mode'''
-def read_device(device_id):
-    if device_id == 3:
-        data = shift.get_value()
+    elif port_num == 6:
+    #    strange 'debug' port? eg. it writes to this port when    
+    #        it writes text to the screen (0=a,1=b,2=c, etc)
     else:
-        data = read_ports.get(device_id)
+        print("Attempted to write to invalid port " + str(port_num))
+
+def read_device(port_num):
+    '''Passes I/O data into emulator state'''
+    if port_num == 3: # read shift register
+        data = shift.get_value()
+    else:              # read other I/O
+        data = read_ports.get(port_num)
     emulator_8080.apply_read_data(data)
 
 def draw_screen(screen, rawimage):
@@ -220,9 +262,6 @@ def draw_screen(screen, rawimage):
     #converttime = time.process_time()
     image = pygame.transform.rotate(image, 90)
     #imagerotatetime = time.process_time()
-    '''image = pygame.transform.scale(image,       \
-            (system_info.get('screen_width')*4, \
-            system_info.get('screen_height')*4)) # couplet again'''
     pygame.transform.scale(image,
                 (system_info.get('screen_height')*4,
                  system_info.get('screen_width')*4),
@@ -240,6 +279,7 @@ def draw_screen(screen, rawimage):
     #    print("draw time " + str(finaltime - starttime))
 
 def init():
+    '''Load files from disk into memory'''
     with open("bin/invaders/invaders.h", 'rb') as input_file:
         emulator_8080.load_program(input_file.read(), 0x0000)
     with open("bin/invaders/invaders.g", 'rb') as input_file:
@@ -254,7 +294,7 @@ def init():
         sound_dict[sound] = pygame.mixer.Sound(sound_dict[sound])
 
 def run():
-    '''Load binary data and begin emulation'''
+    '''Initialize and begin emulation'''
     init()
     last_vblank = time.process_time()
     # mid-screen is roughly half a frame ahead
@@ -266,7 +306,7 @@ def run():
     screen = pygame.display.set_mode((width, height))
     #max_runtime = 600.0
     current_frame = 0
-    #op_tracker = [0]*2**16 # stores ops/frame for averaging
+    #op_tracker = [0]*2**16 # stores ops/frame for metrics
     while True:
         do_quit = handle_events()
         if do_quit:
@@ -280,14 +320,10 @@ def run():
             vram = emulator_8080.state.get_memory_slice(
                         system_info.get('vram_start'),
                         system_info.get('vram_end'))
-            '''graphics_process = Process(target = draw_screen, 
-                                        args = (screen, vram))
-            graphics_process.start()
-            graphics_process.join()''' # TODO multithread?
             draw_screen(screen, vram)
-            '''if current_frame % 60 == 0:
-                print(sum( \
-                    op_tracker[current_frame-59:current_frame+1]))'''
+            #if current_frame % 60 == 0:
+            #    print(sum( \
+            #        op_tracker[current_frame-59:current_frame+1]))
             current_frame += 1
         elif current_time - last_mid >= system_info.get('framerate'):
             last_mid = current_time
@@ -307,5 +343,4 @@ def run():
     pygame.quit()
     exit()
 
-#run("./invaders.full", int(sys.argv[1]))
 run()
