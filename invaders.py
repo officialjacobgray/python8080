@@ -229,6 +229,7 @@ def write_device(port_num):
     elif port_num == 5:
         set_sounds(5, data)
     elif port_num == 6:
+        None # ignore this port
     #    strange 'debug' port? eg. it writes to this port when    
     #        it writes text to the screen (0=a,1=b,2=c, etc)
     else:
