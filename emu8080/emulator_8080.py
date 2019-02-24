@@ -228,10 +228,7 @@ def aci(register_to):
 def sub(register_to, register_from):
     '''Subtract - Store difference of to and from into register_to'''
     dlog("SUB\t\t", register_to, register_from)
-    if register_from == 'm':
-        subtrahend = state.get_memory_by_registers('h', 'l')
-    else:
-        subtrahend = state.get_register_value(register_from)
+    subtrahend = state.get_register_value(register_from)
     carry = subtrahend > state.get_register_value(register_to)
     subtrahend = -subtrahend & 0xff
     result = state.get_register_value(register_to) + subtrahend
@@ -383,10 +380,7 @@ def load_m(target_register, high_byte, low_byte):
         return 1
 
 def inr(target_register):
-    '''Increment Register or Memory'''
-    if target_register == 'm':
-        inr_m()
-        return 1
+    '''Increment Register'''
     dlog("INR\t\t", target_register)
     result = state.get_register_value(target_register) + 1
     state.set_register_value(target_register, result)
@@ -394,8 +388,7 @@ def inr(target_register):
     return 1
 
 def inr_m():
-    '''Increment Memory stored at address described by HL. Not
-        intended to be called directly, call inr("m") instead'''
+    '''Increment Memory stored at address described by HL'''
     dlog("INR M\t\t")
     result = state.get_memory_by_registers('h', 'l')
     result += 1
@@ -586,10 +579,16 @@ def ana(register_from):
     '''Logical AND, stores A & register_from -> A'''
     dlog("ANA\t\t", register_from)
     result = state.get_register_value('a')
-    if register_from == 'm':
-        result &= state.get_memory_by_registers('h', 'l')
-    else:
-        result &= state.get_register_value(register_from)
+    result &= state.get_register_value(register_from)
+    state.set_register_value('a', result)
+    state.set_flags(result, ['z', 's', 'p', 'cy', 'ac'])
+    return 1
+
+def ana_m():
+    '''Logical AND, stores A & memory byte described by HL -> A'''
+    dlog("ANA_M\t\t")
+    result = state.get_register_value('a')
+    result &= state.get_memory_by_registers('h', 'l')
     state.set_register_value('a', result)
     state.set_flags(result, ['z', 's', 'p', 'cy', 'ac'])
     return 1
@@ -609,10 +608,16 @@ def xra(register_from):
     '''Logical XOR, stores A ^ register_from -> A'''
     dlog("XRA\t\t", register_from)
     result = state.get_register_value('a')
-    if register_from == 'm':
-        result ^= state.get_memory_by_registers('h', 'l')
-    else:
-        result ^= state.get_register_value(register_from)
+    result ^= state.get_register_value(register_from)
+    state.set_register_value('a', result)
+    state.set_flags(result, ['z', 's', 'p', 'cy', 'ac'])
+    return 1
+
+def xra_m():
+    '''Logical XOR, stores A ^ memory byte described by HL -> A'''
+    dlog("XRA M\t\t")
+    result = state.get_register_value('a')
+    result ^= state.get_memory_by_registers('h', 'l')
     state.set_register_value('a', result)
     state.set_flags(result, ['z', 's', 'p', 'cy', 'ac'])
     return 1
@@ -631,10 +636,16 @@ def ora(register_from):
     '''Logical OR, stores A | register_from -> A'''
     dlog("ORA\t\t", register_from)
     result = state.get_register_value('a')
-    if register_from == 'm':
-        result |= state.get_memory_by_registers('h', 'l')
-    else:
-        result |= state.get_register_value(register_from)
+    result |= state.get_register_value(register_from)
+    state.set_register_value('a', result)
+    state.set_flags(result, ['z', 's', 'p', 'cy', 'ac'])
+    return 1
+
+def ora_m():
+    '''Logical OR, stores A ^ memory byte described by HL -> A'''
+    dlog("ORA M\t\t")
+    result = state.get_register_value('a')
+    result |= state.get_memory_by_registers('h', 'l')
     state.set_register_value('a', result)
     state.set_flags(result, ['z', 's', 'p', 'cy', 'ac'])
     return 1
@@ -933,7 +944,7 @@ instruction_dict_8080 = { # size    flags
     0x31 : lxi_sp,                          #"LXI SP,D16",#
     0x32 : sta,                             #"STA adr",   #
     0x33 : partial(addx_sp, 1),             #"INX SP",    
-    0x34 : partial(inr, 'm'),               #"INR M",     #Z, S, P, AC
+    0x34 : partial(inr_m),                  #"INR M",     #Z, S, P, AC
     0x35 : dcr_m,                           #"DCR M",     #Z, S, P, AC
     0x36 : mvi_m,                           #"MVI M,D8",  #
     0x37 : stc,                             #"STC",       #CY
@@ -1060,7 +1071,7 @@ instruction_dict_8080 = { # size    flags
     0xa3 : partial(ana, 'e'),               #"ANA E",
     0xa4 : partial(ana, 'h'),               #"ANA H",
     0xa5 : partial(ana, 'l'),               #"ANA L",
-    0xa6 : partial(ana, 'm'),               #"ANA M",
+    0xa6 : partial(ana_m),                  #"ANA M",
     0xa7 : partial(ana, 'a'),               #"ANA A",
     
     0xa8 : partial(xra, 'b'),               #"XRA B",
@@ -1069,7 +1080,7 @@ instruction_dict_8080 = { # size    flags
     0xab : partial(xra, 'e'),               #"XRA E",
     0xac : partial(xra, 'h'),               #"XRA H",
     0xad : partial(xra, 'l'),               #"XRA L",
-    0xae : partial(xra, 'm'),               #"XRA M",
+    0xae : partial(xra_m),                  #"XRA M",
     0xaf : partial(xra, 'a'),               #"XRA A",
     
     0xb0 : partial(ora, 'b'),               #"ORA B",
@@ -1078,7 +1089,7 @@ instruction_dict_8080 = { # size    flags
     0xb3 : partial(ora, 'e'),               #"ORA E",
     0xb4 : partial(ora, 'h'),               #"ORA H",
     0xb5 : partial(ora, 'l'),               #"ORA L",
-    0xb6 : partial(ora, 'm'),               #"ORA M",
+    0xb6 : partial(ora_m),                  #"ORA M",
     0xb7 : partial(ora, 'a'),               #"ORA A",
     
     0xb8 : partial(cmp, 'a', 'b'),          #"CMP B",
