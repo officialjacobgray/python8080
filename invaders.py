@@ -182,6 +182,7 @@ class SpaceInvaders(IOAbstract):
         self._binary_dict = self.binary_dict
         self._read_ports  = self.read_ports
         self._write_ports = self.write_ports
+        self._sound_dict =  self.sound_dict
         self._keymap      = self.keymap
         super().__init__()
 
@@ -194,27 +195,27 @@ class SpaceInvaders(IOAbstract):
             if port == 3:
                 if (new_data & 0x01) and not (old_data & 0x01):
                     # UFO sound loops, starting if 0 changes to 1
-                    self.sound_dict['ufo'].play(-1)
+                    self._sound_dict['ufo'].play(-1)
                 elif (not new_data & 0x01) and (old_data & 0x01):
                     # UFO sound stops when 1 changes to 0
-                    self.sound_dict['ufo'].stop() # .fadeout()
+                    self._sound_dict['ufo'].stop() # .fadeout()
                 if (new_data & 0x02) and not (old_data & 0x02):
-                    self.sound_dict['shot'].play()
+                    self._sound_dict['shot'].play()
                 if (new_data & 0x04) and not (old_data & 0x04):
-                    self.sound_dict['playerdie'].play()
+                    self._sound_dict['playerdie'].play()
                 if (new_data & 0x08) and not (old_data & 0x08):
-                    self.sound_dict['invaderdie'].play()
+                    self._sound_dict['invaderdie'].play()
             elif port == 5:
                 if (new_data & 0x01) and not (old_data & 0x01):
-                    self.sound_dict['fleet1'].play()
+                    self._sound_dict['fleet1'].play()
                 if (new_data & 0x02) and not (old_data & 0x02):
-                    self.sound_dict['fleet2'].play()
+                    self._sound_dict['fleet2'].play()
                 if (new_data & 0x04) and not (old_data & 0x04):
-                    self.sound_dict['fleet3'].play()
+                    self._sound_dict['fleet3'].play()
                 if (new_data & 0x08) and not (old_data & 0x08):
-                    self.sound_dict['fleet4'].play()
+                    self._sound_dict['fleet4'].play()
                 if (new_data & 0x10) and not (old_data & 0x10):
-                    self.sound_dict['ufohit'].play()
+                    self._sound_dict['ufohit'].play()
             self.write_ports[port] = new_data
         
     def write_device(self, port_num):

@@ -71,13 +71,13 @@ class IOAbstract():
     _write_ports = {
     }
 
-    def set_read_bit(port, mask, new_state):
+    def set_read_bit(self, port, mask, new_state):
         ''' Sets bits at the specified port according to the 
             given mask to the boolean value new_state'''
         if new_state:
-            _read_ports[port] = _read_ports[port] | mask
+            self._read_ports[port] = self._read_ports[port] | mask
         else:
-            _read_ports[port] = _read_ports[port] & ~mask
+            self._read_ports[port] = self._read_ports[port] & ~mask
     
     ''' Dict defining bits to set for keypresses. Each key should
         be mapped to a tuple of the format (readport, bitmask) '''
@@ -130,11 +130,11 @@ class IOAbstract():
             if event.type == pygame.KEYDOWN:
                 keydata = self._keymap.get(event.key)
                 if keydata != None:
-                    set_read_bit(keydata, true)
+                    self.set_read_bit(*keydata, True)
             elif event.type == pygame.KEYUP:
                 keydata = self._keymap.get(event.key)
                 if keydata != None:
-                    set_read_bit(keydata, true)
+                    self.set_read_bit(*keydata, False)
             elif event.type == pygame.QUIT:
                 return True
         return False
