@@ -4,6 +4,7 @@ An 8080 emulator written in Python 3.7.2, currently only supports the Space Inva
 ### Running the emulator
 These instructions are for Debian-based Linux systems, but the code should run anywhere you can install Python and PyGame.
 
+1. Download and extract the emulator. You can do this with git, or through the "Clone or download > Download ZIP" option at the top of this page.
 1. Install python 3.7 and pip3.
     ```
     sudo apt install python3 python3-pip
@@ -14,7 +15,7 @@ These instructions are for Debian-based Linux systems, but the code should run a
     ```
 3. Run the desired machine code. The current code only includes a Space Invaders machine.
     ```
-    python3 io_invaders.py
+    python3 invaders.py
     ```
 A graphical window should open and emulation will begin.
 
@@ -36,14 +37,16 @@ Emulator code is in the emu8080 directory:
 - system_state_8080 holds all the stateful information
 - emulator_8080 creates a state and handles all the opcode intstructions
 
-Machine code in the root directory holds hardware-specific operations for a given application, such as user input, sound output, and additional hardware like the shift register in Space Invaders. See io_invaders.py for an implementation. This structure was chosen with the intention that another program could be emulated by creating its own version of io_[game].py code.
+Machine code in the root directory holds hardware-specific operations for a given application, such as user input, sound output, and additional hardware like the shift register in Space Invaders. See io_invaders.py for an implementation. This structure was chosen with the intention that another program could be emulated by creating its own version of [game].py code.
 
 Some tools were made or used to debug the emulator, but are not involved in its operation:
 - cpudiag, a piece of 8080 code designed to verify the accuracy of the original CPU and works nicely for testing emulation. I've written the python code that allows it to run and print to console, but the original binary is from 1980. Refer to the README.md in that folder for more information.
 - disassembler, a basic disassembler for 8080 binaries.
 
+I originally made the instruction code functions more versatile, with polymorphic signatures to reduce the amount of written code, but moving repeated code with minor variations to unique functions rather than making value checks has increased performance 10-20%. This is a pretty big gain in exchange for the reduction in readability/maintainability.
+
 ### Emulation Performance
-Not great. I'm not sure if I"m running up against limitations of Python, but I've tried optimizing the code and the best performance I see on any machine is only about equal to the original hardware (A 2MHz processor) based on how it plays. After the first successful run I was getting an average of 35,000 emulated operations per second outside of the PyGame display calls, and through profiling and adjustments I've got that up to around 50,000 with the current build. This could definitely use some improvement.
+Not great. I'm not sure if I'm running up against limitations of Python, but I've tried optimizing the code and the best performance I see on any machine is only about equal to the original hardware (A 2MHz processor) based on how it plays. After the first successful run I was getting an average of 35,000 emulated operations per second outside of the PyGame display calls, and through profiling and adjustments I've got that up to around 50,000 with the current build. This could definitely use some improvement.
 
 Getting the game screen from memory and passing it through Python is currently taking about 8 to 11 milliseconds of the 16.66 millisecond frame target necessary to hit 60fps. I'm not sure how much of this can be reduced without major restructuring or moving parts of the code away from Python. Regardless, I feel like the number of operations performed in this remaining time should be much higher than they currently are based on other emulators I've tried. The next thing I'll implement here will be to use multithreading to move the emulation to a separate thread from the graphical environment.
 
@@ -60,4 +63,4 @@ Getting the game screen from memory and passing it through Python is currently t
 - Load configuration from file at runtime for input and dipswitches. The structure should make this pretty easy since most data we might want to change is already stored in a global dict.
 
 ### Conclusion
-As it stands, this was a really good learning experience with both Python and emulation in general but I don't really plan to continue this to this due to the significant performance issues I've encountered from using Python. It's possible I just don't know how to optimize Python properly, so if you look at this and have some advice on how to improve this, please let me know!
+As it stands, this was a really good learning experience with both Python and emulation in general but I not sure how much I'll continue this due to the significant performance issues I've encountered. It's possible I just don't know how to optimize Python properly, so if you look at this and have some advice on how to improve this, please let me know!
