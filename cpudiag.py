@@ -27,16 +27,16 @@ from sys import exit
 with open("bin/cpudiag/cpudiag.bin", 'rb') as input_file:
     emulator_8080.load_program(input_file.read(), 0x0100)
 # Insert first instruction to jump to beginning of diagnostic code
-emulator_8080.state.set_memory_byte(0xc3, 0, 0) # JMP to:
-emulator_8080.state.set_memory_byte(0x01, 0, 2) # 0x0100
+emulator_8080.state.set_memory_by_address(0xc3, 0x00) # JMP to:
+emulator_8080.state.set_memory_by_address(0x01, 0x02) # 0x0100
 # Code calls 0x0005 to print messages, needs to be able to return
-emulator_8080.state.set_memory_byte(0xc9, 0, 6) # Return
+emulator_8080.state.set_memory_by_address(0xc9, 0x06) # Return
 # Stack pointer address didn't include correct initial offset
-emulator_8080.state.set_memory_byte(0x07, 0x01, 0x70)
+emulator_8080.state.set_memory_by_address(0x07, 0x0170)
 # Skip DAA tests
-emulator_8080.state.set_memory_byte(0xc3, 0x05, 0x9c) # JMP to:
-emulator_8080.state.set_memory_byte(0xc2, 0x05, 0x9d) # lo c2
-emulator_8080.state.set_memory_byte(0x05, 0x05, 0x9e) # hi 05
+emulator_8080.state.set_memory_by_address(0xc3, 0x059c) # JMP to:
+emulator_8080.state.set_memory_by_address(0xc2, 0x059d) # lo c2
+emulator_8080.state.set_memory_by_address(0x05, 0x059e) # hi 05
 
 instruction_count = 0
 

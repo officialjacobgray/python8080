@@ -162,24 +162,6 @@ def set_stack_top(value):
     '''Stores a byte at the top of the stack'''
     _memory[_registers['sp']] = get_int_TC(value)
 
-def set_memory_byte(value, high_address, low_address = None):
-    '''Stores a byte at the specified memory address, all values
-        may be provided via register or discrete value. If low_address
-        is not set, attempt to read high_address as a 16-bit register
-        (i.e. SP or PC, NOT as a discrete value!)'''
-    true_address = 0
-    if type(high_address) is str: # then it's a register
-        if low_address == None:
-            true_address = _registers[high_address]
-        else:
-            true_address = _registers[high_address] << 8 \
-                            | _registers[low_address]
-    else:
-        true_address = (high_address << 8) | low_address
-    if type(value) is str: # then it's a register
-        value = _registers[value]
-    _memory[true_address] = get_int_TC(value)
-
 def get_memory_by_offset(offset):
     '''Returns a memory byte by offset from current pc'''
     address = _registers['pc'] + offset
