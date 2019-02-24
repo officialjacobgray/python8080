@@ -25,6 +25,7 @@ These instructions are for Debian-based Linux systems, but the code should run a
 A graphical window should open and emulation will begin.
 
 ##### Space Invaders controls
+    ```
     c           : Insert coin
     a           : Player 1 left
     d           : Player 1 right
@@ -34,6 +35,11 @@ A graphical window should open and emulation will begin.
     Up          : Player 2 Up
     1           : 1 Player start
     2           : 2 Player start
+    ```
+
+### Adding a new machine
+
+This should be as simple as creating a class that implements IOAbstract from emu8080/io_abstract.py by providing relevant hardware configuration and whatever specific features are necessary for that hardware (such as the Space Invaders shift register). See that class and the invaders.py implementation for further information.
 
 ### Details
 I built this following the [Emulator 101 guide for the 8080](http://www.emulator101.com/), with a lot of help from the extremely detailed hardware and code breakdown at [Computer Archeology](http://computerarcheology.com/Arcade/SpaceInvaders/) and some error checking against [this browser-based emulator](https://bluishcoder.co.nz/js8080/).
