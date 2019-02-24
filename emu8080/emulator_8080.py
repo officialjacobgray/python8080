@@ -18,11 +18,12 @@
 '''
 
 from functools import partial
-import emu8080.system_state_8080 as state
+from emu8080.system_state_8080 import SystemState
 from sys import exit
 
 _debug_mode = 'none' # options are 'print' or 'write'
 _debug_file = "./debug_file"
+state = SystemState()
 
 def unimplemented_instruction(opcode):
     '''Prints failed instruction info'''
